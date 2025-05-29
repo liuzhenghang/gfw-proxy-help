@@ -20,9 +20,12 @@ def clash_proxy():
     try:
         # 获取base64参数
         base64_str = request.args.get('url')
+        ua = request.args.get('ua')
         if not base64_str:
             return jsonify({'error': '缺少url参数'}), 400
-        
+        if not ua:
+            ua='clash-verge/v2.1.2'
+
         # 解码base64
         try:
             decoded_url = base64.b64decode(base64_str).decode('utf-8')
@@ -32,8 +35,9 @@ def clash_proxy():
         
         # 设置请求头
         headers = {
-            'User-Agent': 'clash-verge/v2.1.2'
+            'User-Agent': ua
         }
+        print(headers)
         
         # 请求目标URL
         try:
