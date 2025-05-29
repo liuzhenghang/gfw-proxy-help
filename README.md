@@ -1,7 +1,9 @@
 # GFW Proxy Helper
 
 一个基于Flask的代理服务，用于处理Clash配置请求。
+有的机场要求客户端版本，使用openwrt-OpenClash的用户没办法获取到订阅信息，实测OpenClash内的ua设置无效，这里写了个代理请求，指定UA如下，这样就可以使用OpenClash来订阅机场了
 
+可以部署在软理由、群晖、云主机等任何地方，只需构建Docker即可
 ## 功能特性
 
 - 🚀 基于Flask框架，轻量高效

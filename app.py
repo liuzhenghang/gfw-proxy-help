@@ -26,7 +26,6 @@ def clash_proxy():
         # 解码base64
         try:
             decoded_url = base64.b64decode(base64_str).decode('utf-8')
-            logger.info(f"解码后的URL: {decoded_url}")
         except Exception as e:
             logger.error(f"Base64解码失败: {e}")
             return jsonify({'error': 'Base64解码失败'}), 400
