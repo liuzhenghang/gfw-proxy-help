@@ -20,6 +20,7 @@
 
 **参数：**
 - `url`: Base64编码的目标URL
+- `ua`: 可选的User-Agent，默认为clash-verge/v2.1.2
 
 **示例：**
 ```bash
@@ -28,6 +29,37 @@ echo "https://example.com/clash-config" | base64
 
 # 然后请求接口
 curl "http://localhost:6789/clash?url=aHR0cHM6Ly9leGFtcGxlLmNvbS9jbGFzaC1jb25maWcK"
+```
+
+### GET /clash_convert
+
+Clash配置转换接口
+
+**参数：**
+- `url`: Base64编码的订阅URL
+- `config`: Base64编码的配置内容
+- `convert_url`: Base64编码的转换服务URL
+
+**功能：**
+向指定的转换服务发送请求，自动添加以下参数：
+- target=clash
+- new_name=true
+- emoji=true
+- udp=true
+- scv=true
+- fdn=true
+- classic=true
+- 其他转换参数
+
+**示例：**
+```bash
+# Base64编码各个参数
+subscription_url=$(echo "https://example.com/subscription" | base64)
+config_content=$(echo "your-config-content" | base64)
+converter_url=$(echo "https://api.v1.mk/sub" | base64)
+
+# 请求转换接口
+curl "http://localhost:6789/clash_convert?url=${subscription_url}&config=${config_content}&convert_url=${converter_url}"
 ```
 
 ### GET /health

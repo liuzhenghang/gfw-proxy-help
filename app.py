@@ -5,6 +5,7 @@ import base64
 import requests
 from flask import Flask, request, jsonify, Response
 import logging
+from urllib.parse import quote, urlencode
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -54,6 +55,72 @@ def clash_proxy():
         logger.error(f"处理请求时出错: {e}")
         return jsonify({'error': f'服务器内部错误: {str(e)}'}), 500
 
+@app.route('/clash_convert', methods=['GET'])
+def clash_convert():
+    """
+    Clash配置转换接口
+    接收url、config、convert_url三个base64参数，向convert_url发送转换请求
+    """
+    try:
+        # 获取base64参数
+        url_b64 = request.args.get('url')
+        config_b64 = request.args.get('config')
+        convert_url_b64 = request.args.get('convert_url')
+        
+        # 检查必需参数
+        if not url_b64:
+            return jsonify({'error': '缺少url参数'}), 400
+        if not config_b64:
+            return jsonify({'error': '缺少config参数'}), 400
+        
+        # 解码base64
+        try:
+            url = base64.b64decode(url_b64).decode('utf-8')
+            config = base64.b64decode(config_b64).decode('utf-8')
+            if not convert_url_b64:
+                convert_url = "https://api.asailor.org/sub"
+            else:
+                convert_url = base64.b64decode(convert_url_b64).decode('utf-8')
+            logger.info(f"转换URL: {convert_url}")
+        except Exception as e:
+            logger.error(f"Base64解码失败: {e}")
+            return jsonify({'error': 'Base64解码失败'}), 400
+        
+        # 构建请求参数
+        params = {
+            'target': 'clash',
+            'new_name': 'true',
+            'url': url,
+            'config': config,
+            'include': '',
+            'exclude': '',
+            'emoji': 'true',
+            'list': 'false',
+            'sort': 'false',
+            'udp': 'true',
+            'scv': 'true',
+            'append_type': 'false',
+            'fdn': 'true',
+            'expand': 'false',
+            'classic': 'true'
+        }
+        # 组装convert_url
+        convert_url = convert_url + '?' + urlencode(params)
+        # 发送GET请求到转换服务
+        try:
+            response = requests.get(convert_url, timeout=60)
+            logger.info(f"转换请求状态码: {response.status_code}")
+            
+            # 原样返回转换结果
+            return response.content
+        except requests.exceptions.RequestException as e:
+            logger.error(f"转换请求失败: {e}")
+            return jsonify({'error': f'转换请求失败: {str(e)}'}), 500
+            
+    except Exception as e:
+        logger.error(f"处理转换请求时出错: {e}")
+        return jsonify({'error': f'服务器内部错误: {str(e)}'}), 500
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """健康检查接口"""
@@ -66,7 +133,8 @@ def index():
         'service': 'GFW Proxy Helper',
         'version': '1.0.0',
         'endpoints': {
-            '/clash': 'GET - 代理Clash配置请求 (参数: url=base64编码的URL)',
+            '/clash': 'GET - 代理Clash配置请求 (参数: url=base64编码的URL, ua=可选的User-Agent)',
+            '/clash_convert': 'GET - Clash配置转换 (参数: url=base64编码的订阅URL, config=base64编码的配置, convert_url=base64编码的转换服务URL)',
             '/health': 'GET - 健康检查'
         }
     })

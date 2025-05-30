@@ -26,9 +26,9 @@ USER app
 # 暴露端口
 EXPOSE 6789
 
-# 健康检查
+# 健康检查 - 使用Python requests模块
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:6789/health || exit 1
+    CMD python -c "import requests; requests.get('http://localhost:6789/health', timeout=5)" || exit 1
 
 # 启动命令
 CMD ["gunicorn", "--bind", "0.0.0.0:6789", "--workers", "4", "--timeout", "60", "app:app"] 
