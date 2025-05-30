@@ -22,6 +22,13 @@
 - `url`: Base64编码的目标URL
 - `ua`: 可选的User-Agent，默认为clash-verge/v2.1.2
 
+**响应头处理：**
+自动提取并传递以下响应头：
+- `Strict-Transport-Security`
+- `Subscription-Userinfo`
+- `Vary`
+- `X-Cache`
+
 **示例：**
 ```bash
 # 先将URL进行Base64编码
@@ -38,7 +45,13 @@ Clash配置转换接口
 **参数：**
 - `url`: Base64编码的订阅URL
 - `config`: Base64编码的配置内容
-- `convert_url`: Base64编码的转换服务URL
+- `convert_url`: Base64编码的转换服务URL (可选，默认使用https://api.asailor.org/sub)
+
+**响应特性：**
+- 自动提取并传递特定响应头 (同/clash接口)
+- 返回UTF-8编码的YAML文件
+- 文件名：`clash_sub.yaml`
+- Content-Type：`application/octet-stream; charset=utf-8`
 
 **功能：**
 向指定的转换服务发送请求，自动添加以下参数：
@@ -55,11 +68,14 @@ Clash配置转换接口
 ```bash
 # Base64编码各个参数
 subscription_url=$(echo "https://example.com/subscription" | base64)
-config_content=$(echo "your-config-content" | base64)
+config_content=$(echo "your-config-yaml-content" | base64)
 converter_url=$(echo "https://api.v1.mk/sub" | base64)
 
-# 请求转换接口
+# 请求转换接口 (convert_url可选)
 curl "http://localhost:6789/clash_convert?url=${subscription_url}&config=${config_content}&convert_url=${converter_url}"
+
+# 不指定convert_url，使用默认转换服务
+curl "http://localhost:6789/clash_convert?url=${subscription_url}&config=${config_content}"
 ```
 
 ### GET /health

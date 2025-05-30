@@ -45,8 +45,20 @@ def clash_proxy():
             response = requests.get(decoded_url, headers=headers, timeout=30)
             logger.info(f"请求状态码: {response.status_code}")
             # print(response.content)
-            # 返回原始内容，保持原始响应头
-            return response.content
+            
+            # 提取特定的响应头
+            response_headers = {}
+            headers_to_copy = ['Strict-Transport-Security', 'Subscription-Userinfo', 'Vary', 'X-Cache']
+            for header_name in headers_to_copy:
+                if header_name in response.headers:
+                    response_headers[header_name] = response.headers[header_name]
+            
+            # 返回原始内容，保持特定响应头
+            return Response(
+                response.content,
+                status=response.status_code,
+                headers=response_headers
+            )
         except requests.exceptions.RequestException as e:
             logger.error(f"请求失败: {e}")
             return jsonify({'error': f'请求失败: {str(e)}'}), 500
@@ -111,8 +123,39 @@ def clash_convert():
             response = requests.get(convert_url, timeout=60)
             logger.info(f"转换请求状态码: {response.status_code}")
             
-            # 原样返回转换结果
-            return response.content
+            # 提取特定的响应头
+            response_headers = {}
+            headers_to_copy = ['Strict-Transport-Security', 'Subscription-Userinfo', 'Vary', 'X-Cache']
+            for header_name in headers_to_copy:
+                if header_name in response.headers:
+                    response_headers[header_name] = response.headers[header_name]
+            
+            # 设置文件下载响应头
+            response_headers['Content-Type'] = 'application/octet-stream; charset=utf-8'
+            response_headers['Content-Disposition'] = 'attachment; filename="clash_sub.yaml"'
+            
+            # 确保内容以UTF-8编码返回
+            content = response.content
+            if isinstance(content, bytes):
+                try:
+                    # 尝试解码并重新编码为UTF-8
+                    content_str = content.decode('utf-8')
+                    content = content_str.encode('utf-8')
+                except UnicodeDecodeError:
+                    # 如果不是UTF-8，尝试其他编码
+                    try:
+                        content_str = content.decode('gbk')
+                        content = content_str.encode('utf-8')
+                    except UnicodeDecodeError:
+                        # 保持原始内容
+                        pass
+            
+            # 返回转换结果，以yaml文件形式
+            return Response(
+                content,
+                status=response.status_code,
+                headers=response_headers
+            )
         except requests.exceptions.RequestException as e:
             logger.error(f"转换请求失败: {e}")
             return jsonify({'error': f'转换请求失败: {str(e)}'}), 500
