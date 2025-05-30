@@ -6,6 +6,8 @@ import requests
 from flask import Flask, request, jsonify, Response
 import logging
 from urllib.parse import quote, urlencode
+import os
+import random
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -130,29 +132,53 @@ def clash_convert():
                 if header_name in response.headers:
                     response_headers[header_name] = response.headers[header_name]
             
+            # 获取响应内容
+            content = response.content
+            
+            # 生成随机数作为文件名
+            random_num = random.randint(100000, 999999)
+            temp_filename = f"temp_clash_{random_num}.yaml"
+            
+            # 确保内容以UTF-8编码保存到临时文件
+            try:
+                # 如果content是bytes，尝试解码为字符串
+                if isinstance(content, bytes):
+                    try:
+                        content_str = content.decode('utf-8')
+                    except UnicodeDecodeError:
+                        # 如果不是UTF-8，尝试其他编码
+                        try:
+                            content_str = content.decode('gbk')
+                        except UnicodeDecodeError:
+                            # 如果都失败，使用错误替换模式
+                            content_str = content.decode('utf-8', errors='replace')
+                else:
+                    content_str = content
+                
+                # 保存到临时文件
+                with open(temp_filename, 'w', encoding='utf-8') as f:
+                    f.write(content_str)
+                logger.info(f"内容已保存到临时文件: {temp_filename}")
+                
+                # 读取文件内容
+                with open(temp_filename, 'r', encoding='utf-8') as f:
+                    file_content = f.read()
+                
+                # 删除临时文件
+                os.remove(temp_filename)
+                logger.info(f"临时文件已删除: {temp_filename}")
+                
+            except Exception as e:
+                logger.error(f"文件操作失败: {e}")
+                return jsonify({'error': f'文件操作失败: {str(e)}'}), 500
+            
             # 设置文件下载响应头
             response_headers['Content-Type'] = 'application/octet-stream; charset=utf-8'
             response_headers['Content-Disposition'] = 'attachment; filename="clash_sub.yaml"'
             
-            # 确保内容以UTF-8编码返回
-            content = response.content
-            if isinstance(content, bytes):
-                try:
-                    # 尝试解码并重新编码为UTF-8
-                    content_str = content.decode('utf-8')
-                    content = content_str.encode('utf-8')
-                except UnicodeDecodeError:
-                    # 如果不是UTF-8，尝试其他编码
-                    try:
-                        content_str = content.decode('gbk')
-                        content = content_str.encode('utf-8')
-                    except UnicodeDecodeError:
-                        # 保持原始内容
-                        pass
-            
-            # 返回转换结果，以yaml文件形式
+            # 返回文件内容
             return Response(
-                content,
+                file_content.encode('utf-8'),
                 status=response.status_code,
                 headers=response_headers
             )
