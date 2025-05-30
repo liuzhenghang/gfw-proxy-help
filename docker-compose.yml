@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  gfw-proxy-help:
+    image: gfw-proxy-help
+    container_name: gfw-proxy-help-container
+    ports:
+      - "6789:6789"
+    restart: unless-stopped
+    # 如果你的build.sh脚本和Dockerfile在同一个目录下，
+    # 并且你想通过docker-compose build来构建镜像，可以取消下面的注释
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile 

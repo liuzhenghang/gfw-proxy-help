@@ -94,27 +94,43 @@ python app.py
 
 ## Docker部署
 
+### 使用build.sh脚本 (推荐)
+
 1. 构建镜像：
 ```bash
 chmod +x build.sh
 ./build.sh
 ```
 
-2. 运行容器：
+2. 运行容器 (build.sh脚本中已提供此命令)：
 ```bash
 docker run -d -p 6789:6789 --name gfw-proxy-help-container gfw-proxy-help
 ```
 
-3. 查看日志：
-```bash
-docker logs -f gfw-proxy-help-container
-```
+### 使用Docker Compose
 
-4. 停止服务：
-```bash
-docker stop gfw-proxy-help-container
-docker rm gfw-proxy-help-container
-```
+1.  (可选) 如果你还没有构建镜像，或者想通过Compose构建：
+    确保 `docker-compose.yml` 文件中的 `build` 部分已取消注释。
+    ```bash
+    docker-compose build
+    ```
+
+2.  启动服务：
+    ```bash
+    docker-compose up -d
+    ```
+
+3.  查看日志：
+    ```bash
+    docker-compose logs -f
+    # 或者指定服务名
+    # docker-compose logs -f gfw-proxy-help
+    ```
+
+4.  停止服务：
+    ```bash
+    docker-compose down
+    ```
 
 ## 使用示例
 
