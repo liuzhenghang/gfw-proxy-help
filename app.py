@@ -27,7 +27,7 @@ def clash_proxy():
         if not base64_str:
             return jsonify({'error': '缺少url参数'}), 400
         if not ua:
-            ua='clash-verge/v2.1.2'
+            ua='clash-verge/v2.3.1'
 
         # 解码base64
         try:
