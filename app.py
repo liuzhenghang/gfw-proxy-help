@@ -8,6 +8,7 @@ import logging
 from urllib.parse import quote, urlencode
 import os
 import random
+import fix_shortid
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -84,15 +85,16 @@ def clash_convert():
         # 检查必需参数
         if not url_b64:
             return jsonify({'error': '缺少url参数'}), 400
-        if not config_b64:
-            return jsonify({'error': '缺少config参数'}), 400
-        
+        if config_b64:
+            config = base64.b64decode(config_b64).decode('utf-8')
+        else:
+            config = 'https://testingcf.jsdelivr.net/gh/Aethersailor/Custom_OpenClash_Rules@main/cfg/Custom_Clash.ini'
         # 解码base64
         try:
             url = base64.b64decode(url_b64).decode('utf-8')
-            config = base64.b64decode(config_b64).decode('utf-8')
+
             if not convert_url_b64:
-                convert_url = "https://api.asailor.org/sub"
+                convert_url = "https://url.v1.mk/sub"
             else:
                 convert_url = base64.b64decode(convert_url_b64).decode('utf-8')
             logger.info(f"转换URL: {convert_url}")
@@ -138,7 +140,8 @@ def clash_convert():
             # 生成随机数作为文件名
             random_num = random.randint(100000, 999999)
             temp_filename = f"temp_clash_{random_num}.yaml"
-            
+            fix_temp_filename = 'fix_'+temp_filename
+
             # 确保内容以UTF-8编码保存到临时文件
             try:
                 # 如果content是bytes，尝试解码为字符串
@@ -159,14 +162,16 @@ def clash_convert():
                 with open(temp_filename, 'w', encoding='utf-8') as f:
                     f.write(content_str)
                 logger.info(f"内容已保存到临时文件: {temp_filename}")
-                
+                fix_shortid.fix_short_id(temp_filename,fix_temp_filename)
+                logger.info(f"short-id修复: {temp_filename}")
                 # 读取文件内容
-                with open(temp_filename, 'r', encoding='utf-8') as f:
+                with open(fix_temp_filename, 'r', encoding='utf-8') as f:
                     file_content = f.read()
                 
                 # 删除临时文件
                 os.remove(temp_filename)
-                logger.info(f"临时文件已删除: {temp_filename}")
+                os.remove(fix_temp_filename)
+                logger.info(f"临时文件已删除: {temp_filename}、{fix_temp_filename}")
                 
             except Exception as e:
                 logger.error(f"文件操作失败: {e}")
