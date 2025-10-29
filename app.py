@@ -56,16 +56,19 @@ def clash_proxy():
             
             # 提取特定的响应头
             response_headers = {}
-            headers_to_copy = ['Strict-Transport-Security', 'Subscription-Userinfo', 'Vary', 'X-Cache']
+            headers_to_copy = ['Strict-Transport-Security', 'Subscription-Userinfo', 'Vary', 'X-Cache', 'Content-Type']
             for header_name in headers_to_copy:
                 if header_name in response.headers:
                     response_headers[header_name] = response.headers[header_name]
+            
+            # 保存主响应的状态码
+            main_status_code = response.status_code
             
             # 如果没有额外订阅，直接返回原始内容
             if not apply_sub_list:
                 return Response(
                     response.content,
-                    status=response.status_code,
+                    status=main_status_code,
                     headers=response_headers
                 )
             
@@ -146,10 +149,16 @@ def clash_proxy():
                 logger.error(f"临时文件操作失败: {e}")
                 return jsonify({'error': f'文件操作失败: {str(e)}'}), 500
             
-            # 返回合并后的内容
+            # 确保Content-Type正确设置
+            if 'Content-Type' not in response_headers:
+                response_headers['Content-Type'] = 'text/yaml; charset=utf-8'
+            
+            logger.info(f"返回headers: {response_headers}")
+            
+            # 返回合并后的内容，使用主订阅的状态码和headers
             return Response(
                 merged_content.encode('utf-8'),
-                status=response.status_code,
+                status=main_status_code,
                 headers=response_headers
             )
             
