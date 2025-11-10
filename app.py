@@ -361,7 +361,7 @@ def input_page():
 
         url_storage[key] = url
         logger.info(f"保存键值对: {key} -> {url}")
-        return f'保存成功！<br>Key: {key}<br>URL: {url}<br><a href="/input?key={key}">返回</a>'
+        return render_template('success.html', key=key, url=url)
 
     # GET请求，显示表单
     key = request.args.get('key', '')
