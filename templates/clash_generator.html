@@ -98,6 +98,8 @@
             font-size: 12px;
             word-break: break-all;
             border: 1px solid #ced4da;
+            width: 100%;
+            resize: vertical;
         }
         .copy-btn {
             background-color: #007bff;
@@ -108,6 +110,8 @@
             cursor: pointer;
             font-size: 14px;
             margin-top: 10px;
+            width: auto;
+            display: inline-block;
         }
         .copy-btn:hover {
             background-color: #0056b3;
@@ -193,8 +197,9 @@
 
         <div id="result" class="result" style="display: none;">
             <h3>生成的Clash接口URL:</h3>
-            <div class="result-url" id="generatedUrl"></div>
+            <textarea class="result-url" id="generatedUrl" rows="3"></textarea>
             <button class="copy-btn" onclick="copyToClipboard()">复制URL</button>
+            <button class="copy-btn" onclick="generateBase64()" style="margin-left: 10px;">生成Base64格式</button>
         </div>
     </div>
 
@@ -245,12 +250,22 @@
             }
 
             // 显示结果
-            document.getElementById('generatedUrl').textContent = fullUrl;
+            document.getElementById('generatedUrl').value = fullUrl;
             document.getElementById('result').style.display = 'block';
         }
 
+        function generateBase64() {
+            const url = document.getElementById('generatedUrl').value;
+            if (!url) {
+                alert('没有可转换的URL');
+                return;
+            }
+            const base64Url = btoa(url);
+            document.getElementById('generatedUrl').value = base64Url;
+        }
+
         function copyToClipboard() {
-            const url = document.getElementById('generatedUrl').textContent;
+            const url = document.getElementById('generatedUrl').value;
             navigator.clipboard.writeText(url).then(() => {
                 alert('URL已复制到剪贴板');
             }).catch(() => {
