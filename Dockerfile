@@ -22,11 +22,12 @@ COPY fix_shortid.py .
 COPY subscription_manager.py .
 COPY templates/ ./templates/
 
-# 创建cache目录
-RUN mkdir -p /app/cache
-
 # 创建非root用户
-RUN useradd --create-home --shell /bin/bash app && chown -R app:app /app
+RUN useradd --create-home --shell /bin/bash app
+
+# 创建cache目录并设置权限
+RUN mkdir -p /app/cache && chown -R app:app /app
+
 USER app
 
 # 暴露端口
