@@ -11,6 +11,7 @@ import random
 import fix_shortid
 import yaml
 import json
+from datetime import datetime
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -71,13 +72,25 @@ def clash_proxy():
         if not ua:
             ua='clash-verge/v2.4.3'
 
-
         # 检查是否是 key:// 开头
+        use_cache = False
+        cached_yaml = None
+        cached_sub_info = None
+        
         if base64_str.startswith('key://'):
             key_name = base64_str[6:]  # 去掉 'key://'
-            decoded_url = get_storage_item(key_name)
-            if decoded_url:
-                logger.info(f"使用存储的URL: {key_name} -> {decoded_url}")
+            cache_data = get_storage_item(key_name)
+            if cache_data:
+                # 检查是否是新格式的缓存数据
+                if isinstance(cache_data, dict) and 'yaml_content' in cache_data:
+                    use_cache = True
+                    cached_yaml = cache_data.get('yaml_content')
+                    cached_sub_info = cache_data.get('subscription_userinfo', '')
+                    logger.info(f"使用缓存的YAML: {key_name}, 缓存时间: {cache_data.get('cached_time')}")
+                else:
+                    # 旧格式，是URL字符串
+                    decoded_url = cache_data
+                    logger.info(f"使用存储的URL: {key_name} -> {decoded_url}")
             else:
                 logger.error(f"Key不存在: {key_name}")
                 return jsonify({'error': f'Key不存在: {key_name}'}), 400
@@ -93,151 +106,210 @@ def clash_proxy():
         headers = {
             'User-Agent': ua
         }
-        print(headers)
         
-        # 请求目标URL
-        try:
-            response = requests.get(decoded_url, headers=headers, timeout=30)
-            logger.info(f"请求状态码: {response.status_code}")
-            
-            # 检查主订阅是否下载失败
-            if response.status_code != 200:
-                logger.error(f"主订阅下载失败，状态码: {response.status_code}")
-                return jsonify({'error': f'主订阅下载失败，状态码: {response.status_code}'}), 500
-            
-            # 提取特定的响应头
+        # 如果使用缓存，直接处理缓存内容
+        if use_cache:
             response_headers = {}
-            headers_to_copy = ['Strict-Transport-Security', 'Subscription-Userinfo', 'Vary', 'X-Cache', 'Content-Type']
-            for header_name in headers_to_copy:
-                if header_name in response.headers:
-                    response_headers[header_name] = response.headers[header_name]
+            if cached_sub_info:
+                response_headers['Subscription-Userinfo'] = cached_sub_info
+            response_headers['Content-Type'] = 'text/yaml; charset=utf-8'
+            main_status_code = 200
             
-            # 保存主响应的状态码
-            main_status_code = response.status_code
-            
-            # 如果没有额外订阅，直接返回原始内容
+            # 如果没有额外订阅，直接返回缓存内容
             if not apply_sub_list:
-                print("\n" * 2)
-                print('=' * 12)
-                print(response.content)
-                print("\n" * 2)
-                print('=' * 12)
                 return Response(
-                    response.content,
-                    status=main_status_code,
+                    cached_yaml.encode('utf-8'),
+                    status=200,
                     headers=response_headers
                 )
             
-            # 处理额外订阅合并
-            logger.info(f"检测到 {len(apply_sub_list)} 个额外订阅")
-            
-            # 解析主订阅内容
+            # 有额外订阅，需要合并
             try:
-                main_yaml = yaml.safe_load(response.content)
+                main_yaml = yaml.safe_load(cached_yaml)
                 if not isinstance(main_yaml, dict):
-                    logger.error("主订阅内容不是有效的YAML字典")
-                    print("\n"*2)
-                    print('='*12)
-                    print(response.content)
-                    print("\n" * 2)
-                    print('=' * 12)
-                    return jsonify({'error': '主订阅内容格式错误'}), 500
+                    logger.error("缓存的YAML内容格式错误")
+                    return jsonify({'error': '缓存的YAML内容格式错误'}), 500
                 
-                # 确保主订阅有proxies字段
                 if 'proxies' not in main_yaml:
                     main_yaml['proxies'] = []
                 
                 main_proxies = main_yaml['proxies']
-                logger.info(f"主订阅包含 {len(main_proxies)} 个代理")
+                logger.info(f"缓存包含 {len(main_proxies)} 个代理")
                 
             except Exception as e:
-                logger.error(f"解析主订阅YAML失败: {e}")
-                return jsonify({'error': f'主订阅YAML解析失败: {str(e)}'}), 500
+                logger.error(f"解析缓存的YAML失败: {e}")
+                return jsonify({'error': f'缓存的YAML解析失败: {str(e)}'}), 500
             
-            # 遍历额外订阅
-            for idx, sub_b64 in enumerate(apply_sub_list):
-                try:
-                    # 解码额外订阅URL
-                    sub_url = base64.b64decode(sub_b64).decode('utf-8')
-                    
-                    # 检查是否是 key:// 开头
-                    if sub_url.startswith('key://'):
-                        key_name = sub_url[6:]
-                        stored_url = get_storage_item(key_name)
-                        if stored_url:
-                            sub_url = stored_url
-                            logger.info(f"额外订阅使用存储的URL: {key_name} -> {sub_url}")
-                        else:
-                            logger.warning(f"额外订阅Key不存在: {key_name}，跳过")
-                            continue
-                    
-                    logger.info(f"下载额外订阅 [{idx+1}/{len(apply_sub_list)}]: {sub_url}")
-                    
-                    # 下载额外订阅
-                    sub_response = requests.get(sub_url, headers=headers, timeout=30)
-                    
-                    if sub_response.status_code != 200:
-                        logger.warning(f"额外订阅 {idx+1} 下载失败，状态码: {sub_response.status_code}")
-                        continue
-                    
-                    # 解析额外订阅YAML
-                    sub_yaml = yaml.safe_load(sub_response.content)
-                    
-                    if not isinstance(sub_yaml, dict):
-                        logger.warning(f"额外订阅 {idx+1} 不是有效的YAML字典")
-                        continue
-                    
-                    # 提取proxies并合并
-                    if 'proxies' in sub_yaml and isinstance(sub_yaml['proxies'], list):
-                        sub_proxies = sub_yaml['proxies']
-                        logger.info(f"额外订阅 {idx+1} 包含 {len(sub_proxies)} 个代理")
-                        main_proxies.extend(sub_proxies)
-                    else:
-                        logger.warning(f"额外订阅 {idx+1} 没有有效的proxies字段")
-                        
-                except Exception as e:
-                    logger.error(f"处理额外订阅 {idx+1} 时出错: {e}")
-                    continue
+        else:
+            # 请求目标URL
+            print(headers)
             
-            # 更新主订阅的proxies
-            main_yaml['proxies'] = main_proxies
-            logger.info(f"合并完成，总共 {len(main_proxies)} 个代理")
-            
-            # 生成临时文件
-            random_num = random.randint(100000, 999999)
-            temp_filename = f"temp_merged_{random_num}.yaml"
-            temp_files.append(temp_filename)
-            
-            # 写入临时文件
             try:
-                with open(temp_filename, 'w', encoding='utf-8') as f:
-                    yaml.dump(main_yaml, f, allow_unicode=True, sort_keys=False)
-                logger.info(f"合并内容已保存到临时文件: {temp_filename}")
+                response = requests.get(decoded_url, headers=headers, timeout=30)
+                logger.info(f"请求状态码: {response.status_code}")
+            
+                # 检查主订阅是否下载失败
+                if response.status_code != 200:
+                    logger.error(f"主订阅下载失败，状态码: {response.status_code}")
+                    return jsonify({'error': f'主订阅下载失败，状态码: {response.status_code}'}), 500
                 
-                # 读取文件内容
-                with open(temp_filename, 'r', encoding='utf-8') as f:
-                    merged_content = f.read()
+                # 提取特定的响应头
+                response_headers = {}
+                headers_to_copy = ['Strict-Transport-Security', 'Subscription-Userinfo', 'Vary', 'X-Cache', 'Content-Type']
+                for header_name in headers_to_copy:
+                    if header_name in response.headers:
+                        response_headers[header_name] = response.headers[header_name]
                 
+                # 保存主响应的状态码
+                main_status_code = response.status_code
+                
+                # 如果没有额外订阅，直接返回原始内容
+                if not apply_sub_list:
+                    print("\n" * 2)
+                    print('=' * 12)
+                    print(response.content)
+                    print("\n" * 2)
+                    print('=' * 12)
+                    return Response(
+                        response.content,
+                        status=main_status_code,
+                        headers=response_headers
+                    )
+                
+                # 处理额外订阅合并
+                logger.info(f"检测到 {len(apply_sub_list)} 个额外订阅")
+                
+                # 解析主订阅内容
+                try:
+                    main_yaml = yaml.safe_load(response.content)
+                    if not isinstance(main_yaml, dict):
+                        logger.error("主订阅内容不是有效的YAML字典")
+                        print("\n"*2)
+                        print('='*12)
+                        print(response.content)
+                        print("\n" * 2)
+                        print('=' * 12)
+                        return jsonify({'error': '主订阅内容格式错误'}), 500
+                    
+                    # 确保主订阅有proxies字段
+                    if 'proxies' not in main_yaml:
+                        main_yaml['proxies'] = []
+                    
+                    main_proxies = main_yaml['proxies']
+                    logger.info(f"主订阅包含 {len(main_proxies)} 个代理")
+                    
+                except Exception as e:
+                    logger.error(f"解析主订阅YAML失败: {e}")
+                    return jsonify({'error': f'主订阅YAML解析失败: {str(e)}'}), 500
+            except requests.exceptions.RequestException as e:
+                logger.error(f"请求失败: {e}")
+                return jsonify({'error': f'请求失败: {str(e)}'}), 500
+        
+        # 处理额外订阅合并（use_cache和非cache共用此逻辑）
+        logger.info(f"检测到 {len(apply_sub_list)} 个额外订阅")
+        for idx, sub_b64 in enumerate(apply_sub_list):
+            try:
+                # 解码额外订阅URL
+                sub_url = base64.b64decode(sub_b64).decode('utf-8')
+                
+                # 检查是否是 key:// 开头
+                if sub_url.startswith('key://'):
+                    key_name = sub_url[6:]
+                    cache_data = get_storage_item(key_name)
+                    if cache_data:
+                        # 检查是否是新格式的缓存数据
+                        if isinstance(cache_data, dict) and 'yaml_content' in cache_data:
+                            # 直接从缓存读取
+                            logger.info(f"额外订阅使用缓存: {key_name}")
+                            try:
+                                sub_yaml = yaml.safe_load(cache_data['yaml_content'])
+                                if not isinstance(sub_yaml, dict):
+                                    logger.warning(f"额外订阅 {idx+1} 缓存的YAML不是有效的字典")
+                                    continue
+                                
+                                # 提取proxies并合并
+                                if 'proxies' in sub_yaml and isinstance(sub_yaml['proxies'], list):
+                                    sub_proxies = sub_yaml['proxies']
+                                    logger.info(f"额外订阅 {idx+1} 从缓存获取 {len(sub_proxies)} 个代理")
+                                    main_proxies.extend(sub_proxies)
+                                else:
+                                    logger.warning(f"额外订阅 {idx+1} 缓存没有有效的proxies字段")
+                                
+                                continue  # 使用缓存成功，跳过下载
+                            except Exception as e:
+                                logger.error(f"解析额外订阅缓存失败: {e}")
+                                continue
+                        else:
+                            # 旧格式，是URL字符串
+                            sub_url = cache_data
+                            logger.info(f"额外订阅使用存储的URL: {key_name} -> {sub_url}")
+                    else:
+                        logger.warning(f"额外订阅Key不存在: {key_name}，跳过")
+                        continue
+                
+                logger.info(f"下载额外订阅 [{idx+1}/{len(apply_sub_list)}]: {sub_url}")
+                
+                # 下载额外订阅
+                sub_response = requests.get(sub_url, headers=headers, timeout=30)
+                
+                if sub_response.status_code != 200:
+                    logger.warning(f"额外订阅 {idx+1} 下载失败，状态码: {sub_response.status_code}")
+                    continue
+                
+                # 解析额外订阅YAML
+                sub_yaml = yaml.safe_load(sub_response.content)
+                
+                if not isinstance(sub_yaml, dict):
+                    logger.warning(f"额外订阅 {idx+1} 不是有效的YAML字典")
+                    continue
+                
+                # 提取proxies并合并
+                if 'proxies' in sub_yaml and isinstance(sub_yaml['proxies'], list):
+                    sub_proxies = sub_yaml['proxies']
+                    logger.info(f"额外订阅 {idx+1} 包含 {len(sub_proxies)} 个代理")
+                    main_proxies.extend(sub_proxies)
+                else:
+                    logger.warning(f"额外订阅 {idx+1} 没有有效的proxies字段")
+                    
             except Exception as e:
-                logger.error(f"临时文件操作失败: {e}")
-                return jsonify({'error': f'文件操作失败: {str(e)}'}), 500
+                logger.error(f"处理额外订阅 {idx+1} 时出错: {e}")
+                continue
+        
+        # 更新主订阅的proxies
+        main_yaml['proxies'] = main_proxies
+        logger.info(f"合并完成，总共 {len(main_proxies)} 个代理")
+        
+        # 生成临时文件
+        random_num = random.randint(100000, 999999)
+        temp_filename = f"temp_merged_{random_num}.yaml"
+        temp_files.append(temp_filename)
+        
+        # 写入临时文件
+        try:
+            with open(temp_filename, 'w', encoding='utf-8') as f:
+                yaml.dump(main_yaml, f, allow_unicode=True, sort_keys=False)
+            logger.info(f"合并内容已保存到临时文件: {temp_filename}")
             
-            # 确保Content-Type正确设置
-            if 'Content-Type' not in response_headers:
-                response_headers['Content-Type'] = 'text/yaml; charset=utf-8'
+            # 读取文件内容
+            with open(temp_filename, 'r', encoding='utf-8') as f:
+                merged_content = f.read()
             
-            logger.info(f"返回headers: {response_headers}")
-            
-            # 返回合并后的内容，使用主订阅的状态码和headers
-            return Response(
-                merged_content.encode('utf-8'),
-                status=main_status_code,
-                headers=response_headers
-            )
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"请求失败: {e}")
-            return jsonify({'error': f'请求失败: {str(e)}'}), 500
+        except Exception as e:
+            logger.error(f"临时文件操作失败: {e}")
+            return jsonify({'error': f'文件操作失败: {str(e)}'}), 500
+        
+        # 确保Content-Type正确设置
+        if 'Content-Type' not in response_headers:
+            response_headers['Content-Type'] = 'text/yaml; charset=utf-8'
+        
+        logger.info(f"返回headers: {response_headers}")
+        
+        # 返回合并后的内容，使用主订阅的状态码和headers
+        return Response(
+            merged_content.encode('utf-8'),
+            status=main_status_code,
+            headers=response_headers
+        )
             
     except Exception as e:
         logger.error(f"处理请求时出错: {e}")
@@ -384,12 +456,62 @@ def input_page():
     if request.method == 'POST':
         key = request.form.get('key')
         url = request.form.get('url')
+        response_json = request.form.get('response_json', '').lower() == 'true'
 
         if not key or not url:
+            if response_json:
+                return jsonify({'error': '缺少参数'}), 400
             return '缺少参数', 400
 
-        set_storage_item(key, url)
-        return render_template('success.html', key=key, url=url)
+        # 使用clash的逻辑下载yaml配置和订阅信息
+        try:
+            ua = 'clash-verge/v2.4.3'
+            headers = {'User-Agent': ua}
+            
+            logger.info(f"下载URL配置: {url}")
+            response = requests.get(url, headers=headers, timeout=30)
+            
+            if response.status_code != 200:
+                error_msg = f'下载失败，状态码: {response.status_code}'
+                logger.error(error_msg)
+                if response_json:
+                    return jsonify({'error': error_msg}), 500
+                return error_msg, 500
+            
+            # 提取yaml内容
+            yaml_content = response.text
+            
+            # 提取订阅信息
+            subscription_userinfo = response.headers.get('Subscription-Userinfo', '')
+            
+            # 保存到缓存，包含时间戳
+            cache_data = {
+                'url': url,
+                'yaml_content': yaml_content,
+                'subscription_userinfo': subscription_userinfo,
+                'cached_time': datetime.now().isoformat()
+            }
+            
+            set_storage_item(key, cache_data)
+            logger.info(f"缓存成功: {key}, 时间: {cache_data['cached_time']}")
+            
+            if response_json:
+                return jsonify({'status': 'ok', 'key': key, 'cached_time': cache_data['cached_time']})
+            
+            return render_template('success.html', key=key, url=url)
+            
+        except requests.exceptions.RequestException as e:
+            error_msg = f'请求失败: {str(e)}'
+            logger.error(error_msg)
+            if response_json:
+                return jsonify({'error': error_msg}), 500
+            return error_msg, 500
+        except Exception as e:
+            error_msg = f'处理失败: {str(e)}'
+            logger.error(error_msg)
+            if response_json:
+                return jsonify({'error': error_msg}), 500
+            return error_msg, 500
 
     # GET请求，显示表单
     key = request.args.get('key', '')
