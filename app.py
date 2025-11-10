@@ -355,17 +355,22 @@ def input_page():
     if request.method == 'POST':
         key = request.form.get('key')
         url = request.form.get('url')
-        
+
         if not key or not url:
             return '缺少参数', 400
-        
+
         url_storage[key] = url
         logger.info(f"保存键值对: {key} -> {url}")
         return f'保存成功！<br>Key: {key}<br>URL: {url}<br><a href="/input?key={key}">返回</a>'
-    
+
     # GET请求，显示表单
     key = request.args.get('key', '')
     return render_template('input.html', key=key)
+
+@app.route('/generator', methods=['GET'])
+def clash_generator():
+    """Clash参数生成器页面"""
+    return render_template('clash_generator.html')
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -379,8 +384,10 @@ def index():
         'service': 'GFW Proxy Helper',
         'version': '1.0.0',
         'endpoints': {
-            '/clash': 'GET - 代理Clash配置请求 (参数: url=base64编码的URL, ua=可选的User-Agent)',
+            '/clash': 'GET - 代理Clash配置请求 (参数: url=base64编码的URL, apply_sub=base64编码的额外订阅URL, ua=可选的User-Agent)',
             '/clash_convert': 'GET - Clash配置转换 (参数: url=base64编码的订阅URL, config=base64编码的配置, convert_url=base64编码的转换服务URL)',
+            '/input': 'GET/POST - 键值对URL存储页面',
+            '/generator': 'GET - Clash参数生成器页面',
             '/health': 'GET - 健康检查'
         }
     })
