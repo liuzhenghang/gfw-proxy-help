@@ -34,7 +34,7 @@ def clash_proxy():
         if not base64_str:
             return jsonify({'error': '缺少url参数'}), 400
         if not ua:
-            ua='clash-verge/v2.3.1'
+            ua='clash-verge/v2.4.3'
 
         # 解码base64
         try:
@@ -66,6 +66,11 @@ def clash_proxy():
             
             # 如果没有额外订阅，直接返回原始内容
             if not apply_sub_list:
+                print("\n" * 2)
+                print('=' * 12)
+                print(response.content)
+                print("\n" * 2)
+                print('=' * 12)
                 return Response(
                     response.content,
                     status=main_status_code,
@@ -80,6 +85,11 @@ def clash_proxy():
                 main_yaml = yaml.safe_load(response.content)
                 if not isinstance(main_yaml, dict):
                     logger.error("主订阅内容不是有效的YAML字典")
+                    print("\n"*2)
+                    print('='*12)
+                    print(response.content)
+                    print("\n" * 2)
+                    print('=' * 12)
                     return jsonify({'error': '主订阅内容格式错误'}), 500
                 
                 # 确保主订阅有proxies字段
@@ -170,6 +180,178 @@ def clash_proxy():
         logger.error(f"处理请求时出错: {e}")
         return jsonify({'error': f'服务器内部错误: {str(e)}'}), 500
     
+    finally:
+        # 清理临时文件
+        for temp_file in temp_files:
+            try:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+                    logger.info(f"临时文件已删除: {temp_file}")
+            except Exception as e:
+                logger.error(f"删除临时文件失败 {temp_file}: {e}")
+@app.route('/clashDre', methods=['GET'])
+def clash_proxyDre():
+    """
+    接收base64字符串，解密后请求目标URL，返回原始内容
+    支持apply_sub参数，可以合并多个订阅的proxies
+    """
+    temp_files = []  # 用于跟踪需要清理的临时文件
+
+    try:
+        # 获取base64参数
+        base64_str = request.args.get('url')
+        ua = request.args.get('ua')
+        apply_sub_list = request.args.getlist('apply_sub')  # 获取额外订阅列表
+
+        if not base64_str:
+            return jsonify({'error': '缺少url参数'}), 400
+        if not ua:
+            ua='clash-verge/v2.4.3'
+
+        # 解码base64
+        try:
+            decoded_url = base64_str
+        except Exception as e:
+            logger.error(f"Base64解码失败: {e}")
+            return jsonify({'error': 'Base64解码失败'}), 400
+
+        # 设置请求头
+        headers = {
+            'User-Agent': ua
+        }
+        print(headers)
+
+        # 请求目标URL
+        try:
+            response = requests.get(decoded_url, headers=headers, timeout=30)
+            logger.info(f"请求状态码: {response.status_code}")
+
+            # 提取特定的响应头
+            response_headers = {}
+            headers_to_copy = ['Strict-Transport-Security', 'Subscription-Userinfo', 'Vary', 'X-Cache', 'Content-Type']
+            for header_name in headers_to_copy:
+                if header_name in response.headers:
+                    response_headers[header_name] = response.headers[header_name]
+
+            # 保存主响应的状态码
+            main_status_code = response.status_code
+
+            # 如果没有额外订阅，直接返回原始内容
+            if not apply_sub_list:
+                print("\n" * 2)
+                print('=' * 12)
+                print(response.content)
+                print("\n" * 2)
+                print('=' * 12)
+                return Response(
+                    response.content,
+                    status=main_status_code,
+                    headers=response_headers
+                )
+
+            # 处理额外订阅合并
+            logger.info(f"检测到 {len(apply_sub_list)} 个额外订阅")
+
+            # 解析主订阅内容
+            try:
+                main_yaml = yaml.safe_load(response.content)
+                if not isinstance(main_yaml, dict):
+                    logger.error("主订阅内容不是有效的YAML字典")
+                    print("\n"*2)
+                    print('='*12)
+                    print(response.content)
+                    print("\n" * 2)
+                    print('=' * 12)
+                    return jsonify({'error': '主订阅内容格式错误'}), 500
+
+                # 确保主订阅有proxies字段
+                if 'proxies' not in main_yaml:
+                    main_yaml['proxies'] = []
+
+                main_proxies = main_yaml['proxies']
+                logger.info(f"主订阅包含 {len(main_proxies)} 个代理")
+
+            except Exception as e:
+                logger.error(f"解析主订阅YAML失败: {e}")
+                return jsonify({'error': f'主订阅YAML解析失败: {str(e)}'}), 500
+
+            # 遍历额外订阅
+            for idx, sub_b64 in enumerate(apply_sub_list):
+                try:
+                    # 解码额外订阅URL
+                    sub_url = sub_b64
+                    logger.info(f"下载额外订阅 [{idx+1}/{len(apply_sub_list)}]: {sub_url}")
+
+                    # 下载额外订阅
+                    sub_response = requests.get(sub_url, headers=headers, timeout=30)
+
+                    if sub_response.status_code != 200:
+                        logger.warning(f"额外订阅 {idx+1} 下载失败，状态码: {sub_response.status_code}")
+                        continue
+
+                    # 解析额外订阅YAML
+                    sub_yaml = yaml.safe_load(sub_response.content)
+
+                    if not isinstance(sub_yaml, dict):
+                        logger.warning(f"额外订阅 {idx+1} 不是有效的YAML字典")
+                        continue
+
+                    # 提取proxies并合并
+                    if 'proxies' in sub_yaml and isinstance(sub_yaml['proxies'], list):
+                        sub_proxies = sub_yaml['proxies']
+                        logger.info(f"额外订阅 {idx+1} 包含 {len(sub_proxies)} 个代理")
+                        main_proxies.extend(sub_proxies)
+                    else:
+                        logger.warning(f"额外订阅 {idx+1} 没有有效的proxies字段")
+
+                except Exception as e:
+                    logger.error(f"处理额外订阅 {idx+1} 时出错: {e}")
+                    continue
+
+            # 更新主订阅的proxies
+            main_yaml['proxies'] = main_proxies
+            logger.info(f"合并完成，总共 {len(main_proxies)} 个代理")
+
+            # 生成临时文件
+            random_num = random.randint(100000, 999999)
+            temp_filename = f"temp_merged_{random_num}.yaml"
+            temp_files.append(temp_filename)
+
+            # 写入临时文件
+            try:
+                with open(temp_filename, 'w', encoding='utf-8') as f:
+                    yaml.dump(main_yaml, f, allow_unicode=True, sort_keys=False)
+                logger.info(f"合并内容已保存到临时文件: {temp_filename}")
+
+                # 读取文件内容
+                with open(temp_filename, 'r', encoding='utf-8') as f:
+                    merged_content = f.read()
+
+            except Exception as e:
+                logger.error(f"临时文件操作失败: {e}")
+                return jsonify({'error': f'文件操作失败: {str(e)}'}), 500
+
+            # 确保Content-Type正确设置
+            if 'Content-Type' not in response_headers:
+                response_headers['Content-Type'] = 'text/yaml; charset=utf-8'
+
+            logger.info(f"返回headers: {response_headers}")
+
+            # 返回合并后的内容，使用主订阅的状态码和headers
+            return Response(
+                merged_content.encode('utf-8'),
+                status=main_status_code,
+                headers=response_headers
+            )
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"请求失败: {e}")
+            return jsonify({'error': f'请求失败: {str(e)}'}), 500
+
+    except Exception as e:
+        logger.error(f"处理请求时出错: {e}")
+        return jsonify({'error': f'服务器内部错误: {str(e)}'}), 500
+
     finally:
         # 清理临时文件
         for temp_file in temp_files:
