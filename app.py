@@ -10,6 +10,7 @@ import os
 import random
 import fix_shortid
 import yaml
+import json
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -18,11 +19,37 @@ logger = logging.getLogger(__name__)
 # 获取当前脚本所在目录
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_DIR = os.path.join(BASE_DIR, 'templates')
+STORAGE_FILE = os.path.join(BASE_DIR, 'url_storage.json')
 
 app = Flask(__name__, template_folder=TEMPLATE_DIR)
 
 # 键值对存储
 url_storage = {}
+
+def load_storage():
+    """从JSON文件加载存储数据"""
+    global url_storage
+    try:
+        if os.path.exists(STORAGE_FILE):
+            with open(STORAGE_FILE, 'r', encoding='utf-8') as f:
+                url_storage = json.load(f)
+            logger.info(f"从文件加载了 {len(url_storage)} 个键值对")
+        else:
+            url_storage = {}
+            logger.info("存储文件不存在，使用空字典")
+    except Exception as e:
+        logger.error(f"加载存储文件失败: {e}")
+        url_storage = {}
+
+def save_storage():
+    """保存存储数据到JSON文件"""
+    try:
+        with open(STORAGE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(url_storage, f, ensure_ascii=False, indent=2)
+        logger.info(f"保存了 {len(url_storage)} 个键值对到文件")
+    except Exception as e:
+        logger.error(f"保存存储文件失败: {e}")
+        raise
 
 @app.route('/clash', methods=['GET'])
 def clash_proxy():
@@ -360,6 +387,7 @@ def input_page():
             return '缺少参数', 400
 
         url_storage[key] = url
+        save_storage()
         logger.info(f"保存键值对: {key} -> {url}")
         return render_template('success.html', key=key, url=url)
 
@@ -394,6 +422,7 @@ def index():
 
 if __name__ == '__main__':
     logger.info("启动Flask服务器...")
+    load_storage()
     for rule in app.url_map.iter_rules():
         logger.info("注册路由: %s -> %s", rule.rule, rule.endpoint)
     app.run(host='0.0.0.0', port=6789, debug=False)
