@@ -19,7 +19,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 复制应用代码
 COPY app.py .
 COPY fix_shortid.py .
+COPY subscription_manager.py .
 COPY templates/ ./templates/
+
+# 创建cache目录
+RUN mkdir -p /app/cache
 
 # 创建非root用户
 RUN useradd --create-home --shell /bin/bash app && chown -R app:app /app
