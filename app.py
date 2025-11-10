@@ -23,30 +23,31 @@ STORAGE_FILE = os.path.join(BASE_DIR, 'url_storage.json')
 
 app = Flask(__name__, template_folder=TEMPLATE_DIR)
 
-# 键值对存储
-url_storage = {}
-
-def load_storage():
-    """从JSON文件加载存储数据"""
-    global url_storage
+def get_storage():
+    """从JSON文件读取存储数据"""
     try:
         if os.path.exists(STORAGE_FILE):
             with open(STORAGE_FILE, 'r', encoding='utf-8') as f:
-                url_storage = json.load(f)
-            logger.info(f"从文件加载了 {len(url_storage)} 个键值对")
+                return json.load(f)
         else:
-            url_storage = {}
-            logger.info("存储文件不存在，使用空字典")
+            return {}
     except Exception as e:
-        logger.error(f"加载存储文件失败: {e}")
-        url_storage = {}
+        logger.error(f"读取存储文件失败: {e}")
+        return {}
 
-def save_storage():
-    """保存存储数据到JSON文件"""
+def get_storage_item(key):
+    """从JSON文件获取指定key的值"""
+    storage = get_storage()
+    return storage.get(key)
+
+def set_storage_item(key, value):
+    """保存键值对到JSON文件"""
+    storage = get_storage()
+    storage[key] = value
     try:
         with open(STORAGE_FILE, 'w', encoding='utf-8') as f:
-            json.dump(url_storage, f, ensure_ascii=False, indent=2)
-        logger.info(f"保存了 {len(url_storage)} 个键值对到文件")
+            json.dump(storage, f, ensure_ascii=False, indent=2)
+        logger.info(f"保存键值对到文件: {key} -> {value}")
     except Exception as e:
         logger.error(f"保存存储文件失败: {e}")
         raise
@@ -74,8 +75,8 @@ def clash_proxy():
         # 检查是否是 key:// 开头
         if base64_str.startswith('key://'):
             key_name = base64_str[6:]  # 去掉 'key://'
-            if key_name in url_storage:
-                decoded_url = url_storage[key_name]
+            decoded_url = get_storage_item(key_name)
+            if decoded_url:
                 logger.info(f"使用存储的URL: {key_name} -> {decoded_url}")
             else:
                 logger.error(f"Key不存在: {key_name}")
@@ -162,8 +163,9 @@ def clash_proxy():
                     # 检查是否是 key:// 开头
                     if sub_url.startswith('key://'):
                         key_name = sub_url[6:]
-                        if key_name in url_storage:
-                            sub_url = url_storage[key_name]
+                        stored_url = get_storage_item(key_name)
+                        if stored_url:
+                            sub_url = stored_url
                             logger.info(f"额外订阅使用存储的URL: {key_name} -> {sub_url}")
                         else:
                             logger.warning(f"额外订阅Key不存在: {key_name}，跳过")
@@ -386,9 +388,7 @@ def input_page():
         if not key or not url:
             return '缺少参数', 400
 
-        url_storage[key] = url
-        save_storage()
-        logger.info(f"保存键值对: {key} -> {url}")
+        set_storage_item(key, url)
         return render_template('success.html', key=key, url=url)
 
     # GET请求，显示表单
@@ -422,7 +422,6 @@ def index():
 
 if __name__ == '__main__':
     logger.info("启动Flask服务器...")
-    load_storage()
     for rule in app.url_map.iter_rules():
         logger.info("注册路由: %s -> %s", rule.rule, rule.endpoint)
     app.run(host='0.0.0.0', port=6789, debug=False)
