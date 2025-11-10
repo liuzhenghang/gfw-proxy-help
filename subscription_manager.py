@@ -5,6 +5,7 @@ import requests
 import logging
 import json
 import os
+import base64
 
 logger = logging.getLogger(__name__)
 
@@ -43,14 +44,14 @@ def download_subscription(url, ua='clash-verge/v2.4.3'):
     下载订阅配置
     
     参数:
-        url: 订阅URL或key://格式的key
+        url: 订阅URL、key://格式的key或base64编码的URL
         ua: User-Agent
     
     返回:
         tuple: (yaml_content, subscription_userinfo, status_code)
         如果失败返回 (None, None, status_code)
     """
-    # 检查是否是key://格式
+    # 1. 检查是否是key://格式
     if url.startswith('key://'):
         key_name = url[6:]  # 去掉'key://'
         cache_data = get_storage_item(key_name)
@@ -59,27 +60,36 @@ def download_subscription(url, ua='clash-verge/v2.4.3'):
             logger.error(f"Key不存在: {key_name}")
             return None, None, 404
         
-        # 检查是否是新格式的缓存数据
-        if isinstance(cache_data, dict) and 'yaml_content' in cache_data:
-            # 直接从缓存读取
-            yaml_content = cache_data.get('yaml_content')
-            subscription_userinfo = cache_data.get('subscription_userinfo', '')
-            cached_time = cache_data.get('cached_time', 'unknown')
-            logger.info(f"使用缓存的YAML: {key_name}, 缓存时间: {cached_time}")
-            return yaml_content, subscription_userinfo, 200
-        else:
-            # 旧格式，cache_data是URL字符串
-            actual_url = cache_data
-            logger.info(f"使用存储的URL: {key_name} -> {actual_url}")
-            # 继续下载
-            url = actual_url
+        # 缓存一律是新格式
+        if not isinstance(cache_data, dict) or 'yaml_content' not in cache_data:
+            logger.error(f"缓存数据格式错误: {key_name}")
+            return None, None, 500
+        
+        # 直接从缓存读取
+        yaml_content = cache_data.get('yaml_content')
+        subscription_userinfo = cache_data.get('subscription_userinfo', '')
+        cached_time = cache_data.get('cached_time', 'unknown')
+        logger.info(f"使用缓存的YAML: {key_name}, 缓存时间: {cached_time}")
+        return yaml_content, subscription_userinfo, 200
+    
+    # 2. 检查是否是http开头
+    if url.startswith('http://') or url.startswith('https://'):
+        actual_url = url
+    else:
+        # 3. 不是http开头，当做base64解码
+        try:
+            actual_url = base64.b64decode(url).decode('utf-8')
+            logger.info(f"Base64解码URL: {actual_url}")
+        except Exception as e:
+            logger.error(f"Base64解码失败: {e}")
+            return None, None, 400
     
     # 下载订阅
     headers = {'User-Agent': ua}
     
     try:
-        logger.info(f"下载订阅: {url}")
-        response = requests.get(url, headers=headers, timeout=30)
+        logger.info(f"下载订阅: {actual_url}")
+        response = requests.get(actual_url, headers=headers, timeout=30)
         
         if response.status_code != 200:
             logger.error(f"订阅下载失败，状态码: {response.status_code}")

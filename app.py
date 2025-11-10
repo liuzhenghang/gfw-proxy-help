@@ -58,27 +58,26 @@ def set_storage_item(key, value):
 @app.route('/clash', methods=['GET'])
 def clash_proxy():
     """
-    接收base64字符串，解密后请求目标URL，返回原始内容
+    订阅代理接口
+    支持: key://缓存key、http(s)://直接URL、base64编码的URL
     支持apply_sub参数，可以合并多个订阅的proxies
     """
     temp_files = []  # 用于跟踪需要清理的临时文件
     
     try:
-        # 获取base64参数
-        base64_str = request.args.get('url')
+        # 获取url参数（支持key://、http(s)://或base64）
+        url_param = request.args.get('url')
         ua = request.args.get('ua')
         apply_sub_list = request.args.getlist('apply_sub')  # 获取额外订阅列表
         
-        if not base64_str:
+        if not url_param:
             return jsonify({'error': '缺少url参数'}), 400
         if not ua:
             ua='clash-verge/v2.4.3'
 
-        # 解码base64（如果不是key://格式）
-        # subscription_manager会自动处理key://和普通URL
-
         # 使用subscription_manager下载主订阅
-        yaml_content, subscription_userinfo, status_code = subscription_manager.download_subscription(base64_str, ua)
+        # 自动处理key://缓存、http(s)://直接URL、base64编码URL
+        yaml_content, subscription_userinfo, status_code = subscription_manager.download_subscription(url_param, ua)
         
         if yaml_content is None:
             error_msg = f'主订阅下载失败，状态码: {status_code}'
@@ -394,9 +393,9 @@ def index():
         'service': 'GFW Proxy Helper',
         'version': '1.0.0',
         'endpoints': {
-            '/clash': 'GET - 代理Clash配置请求 (参数: url=base64编码的URL, apply_sub=base64编码的额外订阅URL, ua=可选的User-Agent)',
+            '/clash': 'GET - 代理Clash配置请求 (参数: url=key://缓存key|http(s)://直接URL|base64编码的URL, apply_sub=额外订阅URL(同url格式), ua=可选的User-Agent)',
             '/clash_convert': 'GET - Clash配置转换 (参数: url=base64编码的订阅URL, config=base64编码的配置, convert_url=base64编码的转换服务URL)',
-            '/input': 'GET/POST - 键值对URL存储页面',
+            '/input': 'GET/POST - 键值对URL存储页面 (POST参数: key=缓存key, url=订阅URL, response_json=true返回json)',
             '/generator': 'GET - Clash参数生成器页面',
             '/health': 'GET - 健康检查'
         }
