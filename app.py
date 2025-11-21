@@ -221,7 +221,7 @@ def clash_convert():
             url = base64.b64decode(url_b64).decode('utf-8')
 
             if not convert_url_b64:
-                convert_url = "https://url.v1.mk/sub"
+                convert_url = "https://api.asailor.org/sub"
             else:
                 convert_url = base64.b64decode(convert_url_b64).decode('utf-8')
             logger.info(f"转换URL: {convert_url}")
