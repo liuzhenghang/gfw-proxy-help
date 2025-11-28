@@ -328,28 +328,63 @@ def input_page():
     if request.method == 'POST':
         key = request.form.get('key')
         url = request.form.get('url')
+        uploaded_file = request.files.get('yaml_file')
         response_json = request.form.get('response_json', '').lower() == 'true'
         try_update = request.form.get('try_update', '').lower() == 'true'
 
-        if not key or not url:
+        if not key:
+             if response_json:
+                return jsonify({'error': '缺少Key参数'}), 400
+             return '缺少Key参数', 400
+        
+        if not url and not uploaded_file:
             if response_json:
-                return jsonify({'error': '缺少参数'}), 400
-            return '缺少参数', 400
+                return jsonify({'error': '缺少URL或文件'}), 400
+            return '请提供URL或上传YAML文件', 400
 
-        # 使用subscription_manager下载yaml配置和订阅信息
         try:
-            ua = 'clash-verge/v2.4.3'
+            yaml_content = None
+            subscription_userinfo = ''
             
-            logger.info(f"下载URL配置: {url}")
-            yaml_content, subscription_userinfo, status_code = subscription_manager.download_subscription(url, ua)
+            # 优先处理文件上传
+            if uploaded_file and uploaded_file.filename:
+                try:
+                    content = uploaded_file.read()
+                    # 尝试解码
+                    try:
+                        yaml_content = content.decode('utf-8')
+                    except UnicodeDecodeError:
+                        yaml_content = content.decode('gbk') # 尝试GBK
+                    
+                    # 验证YAML格式
+                    yaml.safe_load(yaml_content)
+                    logger.info(f"文件上传成功: {uploaded_file.filename}")
+                    
+                    # 如果是文件上传，url可以为空，或者是文件名
+                    if not url:
+                        url = f"file://{uploaded_file.filename}"
+                        
+                except Exception as e:
+                    error_msg = f'文件解析失败: {str(e)}'
+                    logger.error(error_msg)
+                    if response_json:
+                        return jsonify({'error': error_msg}), 400
+                    return error_msg, 400
             
-            if yaml_content is None:
-                error_msg = f'下载失败，状态码: {status_code}'
-                logger.error(error_msg)
-                if response_json:
-                    return jsonify({'error': error_msg}), status_code
-                return error_msg, status_code
-            
+            # 如果没有文件，则处理URL
+            elif url:
+                # 使用subscription_manager下载yaml配置和订阅信息
+                ua = 'clash-verge/v2.4.3'
+                logger.info(f"下载URL配置: {url}")
+                yaml_content, subscription_userinfo, status_code = subscription_manager.download_subscription(url, ua)
+                
+                if yaml_content is None:
+                    error_msg = f'下载失败，状态码: {status_code}'
+                    logger.error(error_msg)
+                    if response_json:
+                        return jsonify({'error': error_msg}), status_code
+                    return error_msg, status_code
+
             # 保存到缓存，包含时间戳
             cache_data = {
                 'url': url,

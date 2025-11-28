@@ -75,7 +75,7 @@
             position: relative;
         }
 
-        input[type="text"] {
+        input[type="text"], input[type="file"] {
             width: 100%;
             padding: 0.75rem 1rem;
             border: 1px solid var(--border-color);
@@ -86,12 +86,42 @@
             color: var(--text-color);
         }
 
+        input[type="file"] {
+             padding: 0.5rem;
+             font-size: 0.875rem;
+        }
+
         input[type="text"]:focus {
             outline: none;
             border-color: var(--primary-color);
             background-color: #ffffff;
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
         }
+
+        .divider {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            margin: 1.5rem 0;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        .divider::before,
+        .divider::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .divider::before {
+            margin-right: 0.5em;
+        }
+
+        .divider::after {
+            margin-left: 0.5em;
+        }
+
 
         /* Toggle Switch Styles */
         .switch-group {
@@ -205,10 +235,10 @@
     <div class="container">
         <div class="header">
             <h1>订阅配置</h1>
-            <p>设置 Key 和订阅链接</p>
+            <p>设置 Key，支持 URL 或本地上传</p>
         </div>
         
-        <form method="POST">
+        <form method="POST" enctype="multipart/form-data">
             <div class="form-group">
                 <label for="key">Key 标识</label>
                 <div class="input-wrapper">
@@ -217,16 +247,25 @@
             </div>
 
             <div class="form-group">
-                <label for="url">订阅链接 (URL)</label>
+                <label for="url">方式一：订阅链接 (URL)</label>
                 <div class="input-wrapper">
-                    <input type="text" id="url" name="url" placeholder="https://example.com/subscribe..." required autocomplete="off">
+                    <input type="text" id="url" name="url" placeholder="https://example.com/subscribe..." autocomplete="off">
+                </div>
+            </div>
+
+            <div class="divider">或</div>
+
+            <div class="form-group">
+                <label for="yaml_file">方式二：上传 YAML 文件</label>
+                <div class="input-wrapper">
+                    <input type="file" id="yaml_file" name="yaml_file" accept=".yaml,.yml">
                 </div>
             </div>
 
             <label class="switch-group" for="try_update">
                 <div class="switch-info">
                     <span class="switch-title">尝试自动更新</span>
-                    <span class="switch-desc">每次请求时尝试获取最新配置，失败则使用缓存</span>
+                    <span class="switch-desc">每次请求时尝试获取最新配置 (仅对 URL 方式有效)</span>
                 </div>
                 <div class="switch">
                     <input type="checkbox" id="try_update" name="try_update" value="true">
