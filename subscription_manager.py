@@ -126,12 +126,12 @@ def download_subscription(url, ua='clash-verge/v2.4.3'):
             return None, None, 400
     
     # 下载订阅
-    # headers = {'User-Agent': ua}
-    headers = {'User-Agent': ua,"Accept":"*/*","Accept-Encoding":"gzip, deflate, br","Connection":"keep-alive","Cache-Control":"no-cache"}
+    headers = {'User-Agent': ua}
+    # headers = {'User-Agent': ua,"Accept":"*/*","Accept-Encoding":"gzip, deflate, br","Connection":"keep-alive","Cache-Control":"no-cache"}
 
     try:
         logger.info(f"下载订阅: {actual_url}")
-        response = requests.get(actual_url, headers=headers, timeout=30)
+        response = requests.get(actual_url, headers=headers, timeout=30, verify=False)
         # 打印此次请求的headers，包括请求头和响应头
         logger.info(f"请求头: {headers}")
         logger.info(f"响应头: {response.headers}")
