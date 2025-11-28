@@ -329,6 +329,7 @@ def input_page():
         key = request.form.get('key')
         url = request.form.get('url')
         response_json = request.form.get('response_json', '').lower() == 'true'
+        try_update = request.form.get('try_update', '').lower() == 'true'
 
         if not key or not url:
             if response_json:
@@ -354,7 +355,8 @@ def input_page():
                 'url': url,
                 'yaml_content': yaml_content,
                 'subscription_userinfo': subscription_userinfo,
-                'cached_time': datetime.now().isoformat()
+                'cached_time': datetime.now().isoformat(),
+                'try_update': try_update
             }
             
             set_storage_item(key, cache_data)
