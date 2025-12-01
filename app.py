@@ -312,21 +312,26 @@ def clash_convert():
                                     main_group_map = {g.get('name'): i for i, g in enumerate(main_groups) if isinstance(g, dict) and 'name' in g}
                                     
                                     covered_count = 0
+                                    added_count = 0
                                     for c_group in cover_groups:
                                         if not isinstance(c_group, dict): continue
                                         c_name = c_group.get('name')
-                                        if c_name and c_name in main_group_map:
-                                            idx = main_group_map[c_name]
-                                            main_groups[idx] = c_group
-                                            covered_count += 1
+                                        if c_name:
+                                            if c_name in main_group_map:
+                                                idx = main_group_map[c_name]
+                                                main_groups[idx] = c_group
+                                                covered_count += 1
+                                            else:
+                                                main_groups.append(c_group)
+                                                added_count += 1
                                     
-                                    if covered_count > 0:
+                                    if covered_count > 0 or added_count > 0:
                                         main_yaml['proxy-groups'] = main_groups
                                         # 重新生成 content_str
                                         content_str = yaml.dump(main_yaml, allow_unicode=True, sort_keys=False)
-                                        logger.info(f"成功覆盖了 {covered_count} 个 proxy-groups")
+                                        logger.info(f"成功覆盖了 {covered_count} 个, 新增了 {added_count} 个 proxy-groups")
                                     else:
-                                        logger.info("没有匹配的 proxy-groups 需要覆盖")
+                                        logger.info("没有匹配的 proxy-groups 需要处理")
                                 else:
                                     logger.warning("main_yaml 或 cover_yaml 的 proxy-groups 不是列表")
                             else:
