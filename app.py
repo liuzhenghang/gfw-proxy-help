@@ -208,6 +208,7 @@ def clash_convert():
         url_b64 = request.args.get('url')
         config_b64 = request.args.get('config')
         convert_url_b64 = request.args.get('convert_url')
+        cover_url_b64 = request.args.get('cover_url')
         
         # 检查必需参数
         if not url_b64:
@@ -225,6 +226,12 @@ def clash_convert():
             else:
                 convert_url = base64.b64decode(convert_url_b64).decode('utf-8')
             logger.info(f"转换URL: {convert_url}")
+
+            cover_url = None
+            if cover_url_b64:
+                cover_url = base64.b64decode(cover_url_b64).decode('utf-8')
+                logger.info(f"覆盖配置URL: {cover_url}")
+
         except Exception as e:
             logger.error(f"Base64解码失败: {e}")
             return jsonify({'error': 'Base64解码失败'}), 400
@@ -284,6 +291,51 @@ def clash_convert():
                             content_str = content.decode('utf-8', errors='replace')
                 else:
                     content_str = content
+
+                # 处理覆盖逻辑
+                if cover_url:
+                    try:
+                        logger.info("开始处理覆盖逻辑...")
+                        # 使用 subscription_manager 下载
+                        cover_content, _, _ = subscription_manager.download_subscription(cover_url, 'clash-verge/v2.4.3')
+                        
+                        if cover_content:
+                            main_yaml = yaml.safe_load(content_str)
+                            cover_yaml = yaml.safe_load(cover_content)
+                            
+                            if isinstance(main_yaml, dict) and isinstance(cover_yaml, dict):
+                                main_groups = main_yaml.get('proxy-groups', [])
+                                cover_groups = cover_yaml.get('proxy-groups', [])
+                                
+                                if isinstance(main_groups, list) and isinstance(cover_groups, list):
+                                    # 创建映射以加快查找
+                                    main_group_map = {g.get('name'): i for i, g in enumerate(main_groups) if isinstance(g, dict) and 'name' in g}
+                                    
+                                    covered_count = 0
+                                    for c_group in cover_groups:
+                                        if not isinstance(c_group, dict): continue
+                                        c_name = c_group.get('name')
+                                        if c_name and c_name in main_group_map:
+                                            idx = main_group_map[c_name]
+                                            main_groups[idx] = c_group
+                                            covered_count += 1
+                                    
+                                    if covered_count > 0:
+                                        main_yaml['proxy-groups'] = main_groups
+                                        # 重新生成 content_str
+                                        content_str = yaml.dump(main_yaml, allow_unicode=True, sort_keys=False)
+                                        logger.info(f"成功覆盖了 {covered_count} 个 proxy-groups")
+                                    else:
+                                        logger.info("没有匹配的 proxy-groups 需要覆盖")
+                                else:
+                                    logger.warning("main_yaml 或 cover_yaml 的 proxy-groups 不是列表")
+                            else:
+                                logger.warning("解析后的 YAML 不是字典")
+                        else:
+                            logger.warning("cover_url 下载内容为空")
+                            
+                    except Exception as e:
+                        logger.error(f"处理 cover_url 覆盖逻辑时出错: {e}")
                 
                 # 保存到临时文件
                 with open(temp_filename, 'w', encoding='utf-8') as f:
@@ -431,7 +483,7 @@ def index():
         'version': '1.0.0',
         'endpoints': {
             '/clash': 'GET - 代理Clash配置请求 (参数: url=key://缓存key|http(s)://直接URL|base64编码的URL, apply_sub=额外订阅URL(同url格式), ua=可选的User-Agent)',
-            '/clash_convert': 'GET - Clash配置转换 (参数: url=base64编码的订阅URL, config=base64编码的配置, convert_url=base64编码的转换服务URL)',
+            '/clash_convert': 'GET - Clash配置转换 (参数: url=base64编码的订阅URL, config=base64编码的配置, convert_url=base64编码的转换服务URL, cover_url=base64编码的覆盖配置URL)',
             '/input': 'GET/POST - 键值对URL存储页面 (POST参数: key=缓存key, url=订阅URL, response_json=true返回json)',
             '/generator': 'GET - Clash参数生成器页面',
             '/health': 'GET - 健康检查'
