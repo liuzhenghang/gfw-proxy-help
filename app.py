@@ -327,13 +327,41 @@ def clash_convert():
                                     
                                     if covered_count > 0 or added_count > 0:
                                         main_yaml['proxy-groups'] = main_groups
-                                        # 重新生成 content_str
-                                        content_str = yaml.dump(main_yaml, allow_unicode=True, sort_keys=False)
                                         logger.info(f"成功覆盖了 {covered_count} 个, 新增了 {added_count} 个 proxy-groups")
                                     else:
                                         logger.info("没有匹配的 proxy-groups 需要处理")
                                 else:
                                     logger.warning("main_yaml 或 cover_yaml 的 proxy-groups 不是列表")
+                                
+                                # 处理 dialers 字段，给 proxies 添加 dialer-proxy
+                                dialers = cover_yaml.get('dialers', [])
+                                if isinstance(dialers, list) and len(dialers) > 0:
+                                    # 构建 dialers 映射: name -> dialer-proxy
+                                    dialer_map = {}
+                                    for d in dialers:
+                                        if isinstance(d, dict) and 'name' in d and 'dialer-proxy' in d:
+                                            dialer_map[d['name']] = d['dialer-proxy']
+                                    
+                                    if dialer_map:
+                                        logger.info(f"发现 {len(dialer_map)} 个 dialer 配置")
+                                        main_proxies = main_yaml.get('proxies', [])
+                                        dialer_count = 0
+                                        
+                                        if isinstance(main_proxies, list):
+                                            for proxy in main_proxies:
+                                                if isinstance(proxy, dict) and 'name' in proxy:
+                                                    proxy_name = proxy['name']
+                                                    if proxy_name in dialer_map:
+                                                        proxy['dialer-proxy'] = dialer_map[proxy_name]
+                                                        dialer_count += 1
+                                                        logger.info(f"为代理 {proxy_name} 添加 dialer-proxy: {dialer_map[proxy_name]}")
+                                            
+                                            if dialer_count > 0:
+                                                main_yaml['proxies'] = main_proxies
+                                                logger.info(f"成功为 {dialer_count} 个代理添加了 dialer-proxy")
+                                
+                                # 重新生成 content_str
+                                content_str = yaml.dump(main_yaml, allow_unicode=True, sort_keys=False)
                             else:
                                 logger.warning("解析后的 YAML 不是字典")
                         else:
