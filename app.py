@@ -366,6 +366,56 @@ def clash_convert():
                                     added_count = 0
                                     for c_group in cover_groups:
                                         if not isinstance(c_group, dict): continue
+
+                                        # 扩展 proxy-groups.use：按 main_yaml 的 proxy-providers 做全匹配/正则匹配，然后改写 use 列表
+                                        # 规则：use 是 list；每个元素先尝试完全匹配 provider 名，不中则当正则去匹配多个 provider
+                                        # 顺序：按 use 原顺序处理；正则匹配结果按 main_yaml.proxy-providers 的 key 顺序输出；去重保序
+                                        try:
+                                            if 'use' in c_group and isinstance(c_group.get('use'), list):
+                                                providers = main_yaml.get('proxy-providers', {})
+                                                if isinstance(providers, dict) and providers:
+                                                    provider_names = list(providers.keys())
+                                                    new_use = []
+                                                    seen = set()
+                                                    for use_item in c_group.get('use', []):
+                                                        if not isinstance(use_item, str) or not use_item:
+                                                            continue
+
+                                                        # 1) 完全匹配优先
+                                                        if use_item in providers:
+                                                            if use_item not in seen:
+                                                                new_use.append(use_item)
+                                                                seen.add(use_item)
+                                                            continue
+
+                                                        # 2) 正则匹配（合法正则才生效）
+                                                        try:
+                                                            reg = re.compile(use_item)
+                                                        except re.error:
+                                                            logger.warning(f"proxy-group use 项不是合法正则且无完全匹配: {use_item}")
+                                                            continue
+
+                                                        matched_any = False
+                                                        for pname in provider_names:
+                                                            try:
+                                                                if reg.search(pname):
+                                                                    matched_any = True
+                                                                    if pname not in seen:
+                                                                        new_use.append(pname)
+                                                                        seen.add(pname)
+                                                            except Exception:
+                                                                continue
+
+                                                        if not matched_any:
+                                                            logger.warning(f"proxy-group use 正则未匹配到任何 proxy-providers: {use_item}")
+
+                                                    if new_use:
+                                                        c_group['use'] = new_use
+                                                else:
+                                                    logger.warning("main_yaml 没有有效的 proxy-providers，跳过 proxy-group use 改写")
+                                        except Exception as e:
+                                            logger.error(f"处理 proxy-group use 改写时出错: {e}")
+
                                         c_name = c_group.get('name')
                                         if c_name:
                                             if c_name in main_group_map:
