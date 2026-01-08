@@ -8,6 +8,7 @@ import logging
 from urllib.parse import quote, urlencode
 import os
 import random
+import re
 import fix_shortid
 import yaml
 import json
@@ -209,6 +210,7 @@ def clash_convert():
         config_b64 = request.args.get('config')
         convert_url_b64 = request.args.get('convert_url')
         cover_url_b64 = request.args.get('cover_url')
+        mix_subs_list = request.args.getlist('mix_subs')  # 混合订阅列表（支持 key://、http(s)://、base64）
         
         # 检查必需参数
         if not url_b64:
@@ -292,6 +294,55 @@ def clash_convert():
                 else:
                     content_str = content
 
+                # 处理混合订阅：在覆盖逻辑之前，把 mix_subs 下载到的 proxies 合并进 main_yaml
+                if mix_subs_list:
+                    try:
+                        main_yaml_for_mix = yaml.safe_load(content_str)
+                        if not isinstance(main_yaml_for_mix, dict):
+                            logger.error("转换后的主配置不是有效的YAML字典，无法执行 mix_subs 合并")
+                            return jsonify({'error': '主配置内容格式错误，无法执行mix_subs合并'}), 500
+
+                        main_proxies_for_mix = main_yaml_for_mix.get('proxies')
+                        if not isinstance(main_proxies_for_mix, list):
+                            # main_yaml 可能没有 proxies 字段，或者类型不对，统一兜底
+                            main_proxies_for_mix = []
+                            main_yaml_for_mix['proxies'] = main_proxies_for_mix
+
+                        mixed_total = 0
+                        for idx, mix_url in enumerate(mix_subs_list):
+                            try:
+                                mix_content, _, mix_status = subscription_manager.download_subscription(
+                                    mix_url, 'clash-verge/v2.4.3'
+                                )
+                                if mix_content is None:
+                                    logger.warning(f"mix_subs {idx+1} 下载失败，状态码: {mix_status}")
+                                    continue
+
+                                mix_yaml = yaml.safe_load(mix_content)
+                                if not isinstance(mix_yaml, dict):
+                                    logger.warning(f"mix_subs {idx+1} 不是有效的YAML字典")
+                                    continue
+
+                                mix_proxies = mix_yaml.get('proxies', [])
+                                if isinstance(mix_proxies, list) and mix_proxies:
+                                    main_proxies_for_mix.extend(mix_proxies)
+                                    mixed_total += len(mix_proxies)
+                                else:
+                                    logger.warning(f"mix_subs {idx+1} 没有有效的proxies字段")
+                            except Exception as e:
+                                logger.error(f"处理 mix_subs {idx+1} 时出错: {e}")
+                                continue
+
+                        if mixed_total > 0:
+                            main_yaml_for_mix['proxies'] = main_proxies_for_mix
+                            content_str = yaml.dump(main_yaml_for_mix, allow_unicode=True, sort_keys=False)
+                            logger.info(f"mix_subs 合并完成，新增 proxies: {mixed_total}，总 proxies: {len(main_proxies_for_mix)}")
+                        else:
+                            logger.info("mix_subs 未合并到任何 proxies（可能都下载失败或无proxies）")
+                    except Exception as e:
+                        logger.error(f"mix_subs 合并处理失败: {e}")
+                        return jsonify({'error': f'mix_subs 合并处理失败: {str(e)}'}), 500
+
                 # 处理覆盖逻辑
                 if cover_url:
                     try:
@@ -336,29 +387,59 @@ def clash_convert():
                                 # 处理 dialers 字段，给 proxies 添加 dialer-proxy
                                 dialers = cover_yaml.get('dialers', [])
                                 if isinstance(dialers, list) and len(dialers) > 0:
-                                    # 构建 dialers 映射: name -> dialer-proxy
-                                    dialer_map = {}
+                                    # name 支持：完全匹配 或 正则表达式匹配
+                                    exact_dialer_map = {}
+                                    regex_dialers = []
                                     for d in dialers:
-                                        if isinstance(d, dict) and 'name' in d and 'dialer-proxy' in d:
-                                            dialer_map[d['name']] = d['dialer-proxy']
-                                    
-                                    if dialer_map:
-                                        logger.info(f"发现 {len(dialer_map)} 个 dialer 配置")
+                                        if not (isinstance(d, dict) and 'name' in d and 'dialer-proxy' in d):
+                                            continue
+                                        name_pat = d.get('name')
+                                        dialer_proxy = d.get('dialer-proxy')
+                                        if not isinstance(name_pat, str) or not name_pat:
+                                            continue
+                                        # exact 优先，regex 放列表按顺序匹配
+                                        exact_dialer_map[name_pat] = dialer_proxy
+                                        try:
+                                            regex_dialers.append((name_pat, re.compile(name_pat), dialer_proxy))
+                                        except re.error:
+                                            # 不是合法正则也没关系，照样保留 exact
+                                            pass
+
+                                    if exact_dialer_map or regex_dialers:
+                                        logger.info(f"发现 dialer 配置: exact={len(exact_dialer_map)}, regex={len(regex_dialers)}")
+
                                         main_proxies = main_yaml.get('proxies', [])
+                                        if not isinstance(main_proxies, list):
+                                            main_proxies = []
+                                            main_yaml['proxies'] = main_proxies
+
                                         dialer_count = 0
-                                        
-                                        if isinstance(main_proxies, list):
-                                            for proxy in main_proxies:
-                                                if isinstance(proxy, dict) and 'name' in proxy:
-                                                    proxy_name = proxy['name']
-                                                    if proxy_name in dialer_map:
-                                                        proxy['dialer-proxy'] = dialer_map[proxy_name]
+                                        for proxy in main_proxies:
+                                            if not (isinstance(proxy, dict) and 'name' in proxy):
+                                                continue
+                                            proxy_name = proxy.get('name')
+                                            if not isinstance(proxy_name, str):
+                                                continue
+
+                                            # 1) 完全匹配优先
+                                            if proxy_name in exact_dialer_map:
+                                                proxy['dialer-proxy'] = exact_dialer_map[proxy_name]
+                                                dialer_count += 1
+                                                continue
+
+                                            # 2) 正则匹配（按 cover_yaml 的 dialers 顺序）
+                                            for _, reg, dialer_proxy in regex_dialers:
+                                                try:
+                                                    if reg.search(proxy_name):
+                                                        proxy['dialer-proxy'] = dialer_proxy
                                                         dialer_count += 1
-                                                        logger.info(f"为代理 {proxy_name} 添加 dialer-proxy: {dialer_map[proxy_name]}")
-                                            
-                                            if dialer_count > 0:
-                                                main_yaml['proxies'] = main_proxies
-                                                logger.info(f"成功为 {dialer_count} 个代理添加了 dialer-proxy")
+                                                        break
+                                                except Exception:
+                                                    continue
+
+                                        if dialer_count > 0:
+                                            main_yaml['proxies'] = main_proxies
+                                            logger.info(f"成功为 {dialer_count} 个代理添加了 dialer-proxy")
                                 
                                 # 重新生成 content_str
                                 content_str = yaml.dump(main_yaml, allow_unicode=True, sort_keys=False)
